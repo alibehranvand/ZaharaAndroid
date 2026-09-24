@@ -1,6 +1,5 @@
 package ir.behranvand.zahara
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
@@ -8,14 +7,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -31,12 +27,10 @@ class MainActivity : Activity() {
         private const val FILE_CHOOSER_REQUEST = 1001
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         webView = WebView(this)
-
         setContentView(webView)
 
         setupWebView()
@@ -48,45 +42,28 @@ class MainActivity : Activity() {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
 
         val settings = webView.settings
 
-        // JavaScript
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
-
-        // Database / storage
         settings.databaseEnabled = true
 
-        // Zoom
+        settings.allowFileAccess = true
+        settings.allowContentAccess = true
+
         settings.setSupportZoom(false)
         settings.builtInZoomControls = false
         settings.displayZoomControls = false
 
-        // Viewport
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = false
 
-        // Cache
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        val cookies = CookieManager.getInstance()
+        cookies.setAcceptCookie(true)
+        cookies.setAcceptThirdPartyCookies(webView, true)
 
-        // File access
-        settings.allowFileAccess = true
-        settings.allowContentAccess = true
-
-        // Cookies
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
-
-        /*
-         * WebViewClient
-         *
-         * مهم:
-         * اینجا دیگر هیچ‌وقت null قرار نمی‌دهیم.
-         */
         webView.webViewClient = object : WebViewClient() {
 
             override fun shouldOverrideUrlLoading(
@@ -94,9 +71,7 @@ class MainActivity : Activity() {
                 request: WebResourceRequest
             ): Boolean {
 
-                val url = request.url.toString()
-
-                return handleUrl(url)
+                return openUrl(request.url.toString())
             }
 
             @Suppress("DEPRECATION")
@@ -105,116 +80,99 @@ class MainActivity : Activity() {
                 url: String
             ): Boolean {
 
-                return handleUrl(url)
-            }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
-                super.onReceivedError(view, request, error)
-
-                if (request.isForMainFrame) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "اتصال به سایت برقرار نشد",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                return openUrl(url)
             }
         }
 
-        /*
-         * JavaScript dialogs / file chooser
-         */
         webView.webChromeClient = object : WebChromeClient() {
 
             override fun onShowFileChooser(
-                webView: WebView?,
-                filePath: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
+                webView: WebView,
+                filePath: ValueCallback<Array<Uri>>,
+                fileChooserParams: FileChooserParams
             ): Boolean {
 
-                filePathCallback?.onReceiveValue(null)
+                this@MainActivity.filePathCallback?.onReceiveValue(null)
 
-                filePathCallback = filePath
+                this@MainActivity.filePathCallback = filePath
 
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                    putExtra(
-                        Intent.EXTRA_MIME_TYPES,
-                        arrayOf(
-                            "application/vnd.ms-excel",
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "application/octet-stream"
-                        )
-                    )
-                }
+                val intent = Intent(Intent.ACTION_GET_CONTENT)
 
-                return try {
+                intent.addCategory(Intent.CATEGORY_OPENABLE)
+                intent.type = "*/*"
+
+                try {
                     startActivityForResult(
-                        Intent.createChooser(intent, "انتخاب فایل اکسل"),
+                        Intent.createChooser(
+                            intent,
+                            "انتخاب فایل"
+                        ),
                         FILE_CHOOSER_REQUEST
                     )
-                    true
+
+                    return true
+
                 } catch (e: Exception) {
-                    filePathCallback?.onReceiveValue(null)
-                    filePathCallback = null
-                    false
+
+                    this@MainActivity.filePathCallback = null
+                    return false
                 }
             }
         }
 
-        /*
-         * Download support
-         */
         webView.setDownloadListener(
             DownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
 
                 try {
 
-                    val request = DownloadManager.Request(Uri.parse(url))
+                    val request =
+                        DownloadManager.Request(Uri.parse(url))
 
                     request.setMimeType(mimeType)
 
-                    val cookies = CookieManager
-                        .getInstance()
-                        .getCookie(url)
+                    val cookie =
+                        CookieManager
+                            .getInstance()
+                            .getCookie(url)
 
-                    if (!cookies.isNullOrEmpty()) {
-                        request.addRequestHeader("Cookie", cookies)
+                    if (!cookie.isNullOrEmpty()) {
+                        request.addRequestHeader(
+                            "Cookie",
+                            cookie
+                        )
                     }
 
-                    request.addRequestHeader("User-Agent", userAgent)
+                    request.addRequestHeader(
+                        "User-Agent",
+                        userAgent
+                    )
 
-                    request.setDescription("در حال دانلود فایل...")
-                    request.setTitle(
-                        URLUtilHelper.guessFileName(
+                    val fileName =
+                        android.webkit.URLUtil.guessFileName(
                             url,
                             contentDisposition,
                             mimeType
                         )
-                    )
+
+                    request.setTitle(fileName)
+                    request.setDescription("در حال دانلود فایل...")
 
                     request.setNotificationVisibility(
-                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                        DownloadManager.Request
+                            .VISIBILITY_VISIBLE_NOTIFY_COMPLETED
                     )
 
                     request.setDestinationInExternalPublicDir(
                         Environment.DIRECTORY_DOWNLOADS,
-                        URLUtilHelper.guessFileName(
-                            url,
-                            contentDisposition,
-                            mimeType
-                        )
+                        fileName
                     )
 
-                    val downloadManager =
-                        getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    val manager =
+                        getSystemService(
+                            Context.DOWNLOAD_SERVICE
+                        ) as DownloadManager
 
-                    downloadManager.enqueue(request)
+                    manager.enqueue(request)
 
                     Toast.makeText(
                         this@MainActivity,
@@ -226,62 +184,63 @@ class MainActivity : Activity() {
 
                     Toast.makeText(
                         this@MainActivity,
-                        "دانلود فایل انجام نشد",
+                        "دانلود انجام نشد",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
             }
-        }
+        )
     }
 
-    private fun handleUrl(url: String): Boolean {
+    private fun openUrl(url: String): Boolean {
 
-        /*
-         * لینک‌های سایت داخل WebView باز شوند.
-         */
         if (
             url.startsWith("https://behranvand.ir") ||
             url.startsWith("http://behranvand.ir")
         ) {
-            webView.loadUrl(url)
-            return true
+            return false
         }
 
-        /*
-         * لینک‌های tel:
-         */
         if (url.startsWith("tel:")) {
+
             try {
                 startActivity(
-                    Intent(Intent.ACTION_DIAL, Uri.parse(url))
+                    Intent(
+                        Intent.ACTION_DIAL,
+                        Uri.parse(url)
+                    )
                 )
-            } catch (_: Exception) {
+            } catch (e: Exception) {
             }
 
             return true
         }
 
-        /*
-         * ایمیل
-         */
         if (url.startsWith("mailto:")) {
+
             try {
                 startActivity(
-                    Intent(Intent.ACTION_SENDTO, Uri.parse(url))
+                    Intent(
+                        Intent.ACTION_SENDTO,
+                        Uri.parse(url)
+                    )
                 )
-            } catch (_: Exception) {
+            } catch (e: Exception) {
             }
 
             return true
         }
 
-        /*
-         * لینک‌های خارجی در مرورگر سیستم
-         */
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(intent)
-        } catch (_: Exception) {
+
+            startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(url)
+                )
+            )
+
+        } catch (e: Exception) {
         }
 
         return true
@@ -297,7 +256,9 @@ class MainActivity : Activity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+
         webView.saveState(outState)
+
         super.onSaveInstanceState(outState)
     }
 
@@ -308,8 +269,6 @@ class MainActivity : Activity() {
 
         webView.stopLoading()
         webView.webChromeClient = null
-        webView.webViewClient = WebViewClient()
-
         webView.destroy()
 
         super.onDestroy()
@@ -321,7 +280,12 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
-        super.onActivityResult(requestCode, resultCode, data)
+
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
 
         if (requestCode != FILE_CHOOSER_REQUEST) {
             return
@@ -334,60 +298,19 @@ class MainActivity : Activity() {
             return
         }
 
-        if (resultCode == RESULT_OK && data != null) {
+        if (
+            resultCode == RESULT_OK &&
+            data != null &&
+            data.data != null
+        ) {
 
-            val result = data.data
-
-            if (result != null) {
-                callback.onReceiveValue(arrayOf(result))
-            } else {
-                callback.onReceiveValue(null)
-            }
+            callback.onReceiveValue(
+                arrayOf(data.data!!)
+            )
 
         } else {
+
             callback.onReceiveValue(null)
         }
-    }
-}
-
-/*
- * Helper برای نام فایل دانلودی
- */
-private object URLUtilHelper {
-
-    fun guessFileName(
-        url: String,
-        contentDisposition: String?,
-        mimeType: String?
-    ): String {
-
-        var fileName = "download"
-
-        try {
-            val uri = Uri.parse(url)
-
-            uri.lastPathSegment?.let {
-                if (it.isNotBlank()) {
-                    fileName = it
-                }
-            }
-
-        } catch (_: Exception) {
-        }
-
-        if (
-            !fileName.contains(".") &&
-            !mimeType.isNullOrBlank()
-        ) {
-            fileName += when {
-                mimeType.contains("spreadsheet") -> ".xlsx"
-                mimeType.contains("excel") -> ".xls"
-                mimeType.contains("pdf") -> ".pdf"
-                mimeType.contains("zip") -> ".zip"
-                else -> ""
-            }
-        }
-
-        return fileName
     }
 }
