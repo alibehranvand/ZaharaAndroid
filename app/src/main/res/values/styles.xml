@@ -1,0 +1,7 @@
+<resources>
+    <style name="SplashTheme" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_zahara</item>
+        <item name="postSplashScreenTheme">@style/Theme.Zahara</item>
+    </style>
+</resources>
